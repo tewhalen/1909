@@ -2,3 +2,5 @@
 working/*/page.png
 working/*/column*
 working/*/*.csv
+Pipfile.lock
+working/page-subset.pdf
