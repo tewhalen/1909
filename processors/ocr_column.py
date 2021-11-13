@@ -7,14 +7,14 @@ import sys
 import typing
 
 import click
-import matplotlib.pyplot as plt
 import pandas as pd
 import pytesseract
 from numpy import nan
-from PIL import Image
+from PIL import Image, ImageDraw
 
 FILTER_OUT = ["|"]
 
+TESSDATADIR = "../../"
 
 def filter_horiz_lines(text: str):
     "returns true if this is not just horizontal line stuff"
@@ -22,6 +22,12 @@ def filter_horiz_lines(text: str):
     horiz_chars = "".maketrans("", "", "—._-~=")
 
     return any(text.translate(horiz_chars).strip())
+
+def probable_street_name(text:str):
+    for substr in ("Street","Court","Avenue","North","South","Place","East","West"):
+        if substr in text:
+            return True
+    return False
 
 
 class Text:
@@ -36,9 +42,27 @@ class Text:
     def __repr__(self):
         return "<{!r} ({})>".format(self.text, self.conf)
 
+    def __add__(self, other):
+        d = {}
+        d['text'] = self.text + " " + other.text
+        d['conf'] = min(self.conf, other.conf)
+        d['top']= max(self.row, other.row)
+        d['left'] = min(self.col,other.col)
+        d['right'] = max(self.bbox[2], other.bbox[2])
+        d['bot'] = min(self.bbox[3], other.bbox[3])
+        return Text(d)
+
+    def add(self, other):
+        d = {}
+        d['text'] = self.text + " " + other.text
+        d['conf'] = min(self.conf, other.conf)
+        d['top']= max(self.row, other.row)
+        d['left'] = min(self.col,other.col)
+        d['right'] = max(self.bbox[2], other.bbox[2])
+        d['bot'] = min(self.bbox[3], other.bbox[3])
+        return Text(d)
 
 def parse_group(group):
-    # print(repr(group))
 
     row_height = group["height"].min()
     return (row_height, [Text(row) for i, row in group.iterrows()])
@@ -82,16 +106,55 @@ class Street:
         elif texts[0].text == "New":
             return True
 
+        is_num = [x.text.isnumeric() for x in texts]
         if len(texts) == 2:
             # simple map?
             self.pairs.append((texts[0], texts[1]))
             return True
-        elif len(texts) == 4:
+        elif len(texts) == 3:
+            # new old suffix
+            # new prefix old
+            if texts[0].text.isnumeric():
+                if texts[1].text.isnumeric() or texts[2].text.isnumeric():
+                    self.pairs.append((texts[0], texts[1] + texts[2]))
+                    return True
+            return False
+        elif len(texts) == 4 and texts[0].text.isnumeric() and texts[2].text.isnumeric():
+            # somehow we got two pairs
+            # new old  | new old
             self.pairs.append((texts[0], texts[1]))
             self.pairs.append((texts[2], texts[3]))
 
             return True
-        else:
+        elif len(texts) == 5 and is_num[0]:
+            # NEW   old     suffix  NEW     old
+            # NEW   old     NEW     old     suffix
+            # NEW   prefix  old     NEW     old
+            # NEW   old     NEW     prefix  old
+
+            if is_num[2] and not (is_num[4] and is_num[3]):
+                # NEW   old     NEW     old     suffix
+                # NEW   old     NEW     prefix  old
+                self.pairs.append((texts[0], texts[1]))
+                self.pairs.append((texts[2], texts[3]+texts[4]))
+                return True
+            elif not (is_num[1] and is_num[2]):
+                # NEW   old     suffix  NEW     old
+                # NEW   prefix  old     NEW     old
+                self.pairs.append((texts[0], texts[1]+texts[2]))
+                self.pairs.append((texts[3], texts[4]))
+                return True
+            return False
+
+        elif len(texts) == 6:
+            # new old suffix new old suffix
+            if texts[0].text.isnumeric() and texts[3].text.isnumeric():
+                if (texts[1].text.isnumeric() or texts[2].text.isnumeric()) and \
+                    (texts[4].text.isnumeric() or texts[5].text.isnumeric()):
+
+                    self.pairs.append((texts[0], texts[1]+texts[2]))
+                    self.pairs.append((texts[0], texts[4]+texts[5]))
+                    return True
             return False
 
     def divide_into_columns(self) -> typing.Tuple[list, list]:
@@ -162,12 +225,7 @@ class Street:
             error_count += column["address"].isnull().sum()
 
         return error_count
-        if False:
-            print(self.name)
-            print(col_one, col_two)
-            print(column)
-            column["address"].plot()
-            plt.show()
+
 
     def output(self, infile_name: str, outfile: csv.DictWriter):
         for new, old in self.pairs:
@@ -205,31 +263,28 @@ def mono_score(series, i):
     index = series.index < i
     comparison = diff != index
 
-    if False:  # series[i] == 1307:
-        print(i, "diff", diff)
 
-        print(i, "index", index)
-        print(comparison)
-        print(comparison.where(series.notna()))
-        print(comparison.sum())
 
     return comparison.where(series.notna()).sum() ** 2 / len(series)
 
 
-def prepare_ocr_data(filename):
+def prepare_ocr_data(filename: str) -> pd.DataFrame:
 
     # Get verbose data including boxes, confidences, line and page numbers
 
     ocr_data = pytesseract.image_to_data(
         Image.open(filename),
         output_type=pytesseract.Output.DATAFRAME,
-        config="--psm 6",  # Assume a single uniform block of text.
+        config="--tessdata-dir {} -l 1909 --psm 6".format(TESSDATADIR),  # Assume a single uniform block of text.
     ).dropna()
-    height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
+
     # we assume the mode is the basic row, and throw out everything that's
     # three times the height of that
+    height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
+   
     ocr_data = ocr_data[ocr_data["height"] <= height_mode * 3]
-    # and lets throw out anything that's less than 75% the width of the regular row
+    
+    # and lets throw out anything that's less than 75% the height of the regular row
     ocr_data = ocr_data[ocr_data["height"] > height_mode * 0.75]
 
     # filter out common OCR errors
@@ -259,12 +314,29 @@ def set_error(df, group_id, error_msg):
 @click.option("--errors", type=click.Path())
 @click.option("--prev_csv", type=click.Path(exists=True))
 @click.option("--page_id", type=int)
-def ocr_column(filename, output, errors, prev_csv=None, page_id=0):
+@click.option("--debug_image", type=click.Path())
+def ocr_column(filename, output, errors, prev_csv=None, page_id=0, debug_image=None):
     """get our best information"""
 
     ocr_data = prepare_ocr_data(filename)
+
+
+    if debug_image:
+        # output a marked-up debug image
+        base_img = Image.open(filename)
+        draw = ImageDraw.Draw(base_img)
+        for index, row in ocr_data.iterrows():
+            draw.rectangle((row.right, row.bot, row.left, row.top))
+            draw.text((row.left, row.bot), row.text, color="red")
+            #print(index, row['right'],row['left'],row.conf)
+        base_img.save(debug_image)
+
+
+
     height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
     ocr_data["error"] = ""
+
+    # group it into horizontally-aligned groups
     grouped = ocr_data.groupby(["block_num", "par_num", "line_num"])
 
     # print(ocr_data["height"].describe())
@@ -299,21 +371,22 @@ def ocr_column(filename, output, errors, prev_csv=None, page_id=0):
         result = False
 
         row_height, texts = parse_group(group)
-        if row_height > 1.3 * height_mode:
+        combined_text = " ".join(x.text for x in texts)
+        if row_height > 1.3 * height_mode or probable_street_name(combined_text):
             # this is a street name probably
             if not known_streets:
-                current_street = Street(name=" ".join(x.text for x in texts), page_id=page_id)
+                current_street = Street(name=combined_text, page_id=page_id)
                 streets.append(current_street)
                 result = True
             else:
-                new_street_name = name=" ".join(x.text for x in texts)
+                new_street_name = combined_text
                 if new_street_name in known_streets:
                     new_street_name = known_streets[new_street_name]
                     if new_street_name != current_street.name:
                         current_street = Street(new_street_name, page_id=page_id)
                         streets.append(current_street)
                         result = True
-        elif within(row_height, 0.10, height_mode):
+        elif within(row_height, 0.2, height_mode):
 
             result = current_street.parse_row(texts)
             if not result:
@@ -333,7 +406,7 @@ def ocr_column(filename, output, errors, prev_csv=None, page_id=0):
 
     if error_count:
         print(
-            "{} ({:0.1%}) errored groups.".format(
+            "{} ({:0.1%}) rejected OCR groups.".format(
                 error_count, error_count / (error_count + success_count)
             )
         )
@@ -359,7 +432,7 @@ def ocr_column(filename, output, errors, prev_csv=None, page_id=0):
             if street.pairs:
                 errors = street.check_assumptions()
                 print(
-                    "{}: {} pairs, {} errors".format(
+                    "{}: {} pairs, {} odd/even/order errors".format(
                         street.name, len(street.pairs), errors
                     )
                 )
