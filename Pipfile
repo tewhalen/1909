@@ -16,6 +16,8 @@ matplotlib = "*"
 pytesseract = "*"
 pandas = "*"
 csvkit = "*"
+jinja2 = "*"
+loguru = "*"
 
 [dev-packages]
 black = "*"

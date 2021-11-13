@@ -1,32 +1,34 @@
 #!/usr/bin/env python
 
+
 import csv
-import json
-import os
+import itertools
+
+import pathlib
+import re
 import sys
 import typing
-import itertools
-import pathlib
+import copy
 
+from loguru import logger
 import click
 import pandas as pd
-import pytesseract
 from numpy import nan
-from PIL import Image, ImageDraw
 
-FILTER_OUT = ["|"]
+logger.remove()
 
-TESSDATADIR = pathlib.Path(__file__).parent.parent
 
-def filter_horiz_lines(text: str):
-    "returns true if this is not just horizontal line stuff"
-
-    horiz_chars = "".maketrans("", "", "—._-~=")
-
-    return any(text.translate(horiz_chars).strip())
-
-def probable_street_name(text:str):
-    for substr in ("Street","Court","Avenue","North","South","Place","East","West"):
+def probable_street_name(text: str):
+    for substr in (
+        "Street",
+        "Court",
+        "Avenue",
+        "North",
+        "South",
+        "Place",
+        "East",
+        "West",
+    ):
         if substr in text:
             return True
     return False
@@ -34,34 +36,30 @@ def probable_street_name(text:str):
 
 class Text:
     def __init__(self, item):
-        # print(item)
         self.text = item["text"]
+        self.line_num = item["line_num"]
         self.conf = item["conf"]
-        self.row = item["top"]
-        self.col = item["left"]
-        self.bbox = (item["left"], item["top"], item["right"], item["bot"])
+        self.top = item["top"]
+        self.left = item["left"]
+        self.right = item["right"]
+        self.bot = item["bot"]
+
+    @property
+    def bbox(self):
+        return (self.left, self.top, self.right, self.bot)
 
     def __repr__(self):
         return "<{!r} ({})>".format(self.text, self.conf)
 
     def __add__(self, other):
         d = {}
-        d['text'] = self.text + " " + other.text
-        d['conf'] = min(self.conf, other.conf)
-        d['top']= max(self.row, other.row)
-        d['left'] = min(self.col,other.col)
-        d['right'] = max(self.bbox[2], other.bbox[2])
-        d['bot'] = min(self.bbox[3], other.bbox[3])
-        return Text(d)
-
-    def add(self, other):
-        d = {}
-        d['text'] = self.text + " " + other.text
-        d['conf'] = min(self.conf, other.conf)
-        d['top']= max(self.row, other.row)
-        d['left'] = min(self.col,other.col)
-        d['right'] = max(self.bbox[2], other.bbox[2])
-        d['bot'] = min(self.bbox[3], other.bbox[3])
+        d["text"] = self.text + " " + other.text
+        d["conf"] = min(self.conf, other.conf)
+        d["top"] = max(self.top, other.top)
+        d["left"] = min(self.left, other.left)
+        d["right"] = max(self.right, other.right)
+        d["bot"] = min(self.bot, other.bot)
+        d["line_num"] = self.line_num
         return Text(d)
 
     def split(self):
@@ -69,13 +67,16 @@ class Text:
         texts = []
         if "|" in self.text:
             for subtext in self.text.split("|"):
-                d = {'text':subtext,'conf':self.conf, 'top':self.row,'left':self.col,'right':self.bbox[2],'bot':self.bbox[3]}
-                texts.append(Text(d))
+                if subtext:
+                    new_text = copy.copy(self)
+                    new_text.text = subtext
+                    texts.append(new_text)
         else:
             texts = [self]
         return texts
 
-def parse_group(group):
+
+def parse_ocr_row(group, line_num):
 
     row_height = group["height"].min()
     texts = [Text(row).split() for i, row in group.iterrows()]
@@ -110,6 +111,8 @@ class Street:
         self.page_id = page_id
 
     def parse_row(self, texts) -> bool:
+        """Based on the number and contents of the texts in the row, attempt to
+        figure out the address mapping"""
 
         # ignore header rows
         if texts[0].text.startswith("CONTINUED"):
@@ -133,8 +136,13 @@ class Street:
                 if texts[1].text.isnumeric() or texts[2].text.isnumeric():
                     self.pairs.append((texts[0], texts[1] + texts[2]))
                     return True
+            logger.debug(
+                "Row of length three unparsable: {}", " ".join(x.text for x in texts)
+            )
             return False
-        elif len(texts) == 4 and texts[0].text.isnumeric() and texts[2].text.isnumeric():
+        elif (
+            len(texts) == 4 and texts[0].text.isnumeric() and texts[2].text.isnumeric()
+        ):
             # somehow we got two pairs
             # new old  | new old
             self.pairs.append((texts[0], texts[1]))
@@ -151,12 +159,12 @@ class Street:
                 # NEW   old     NEW     old     suffix
                 # NEW   old     NEW     prefix  old
                 self.pairs.append((texts[0], texts[1]))
-                self.pairs.append((texts[2], texts[3]+texts[4]))
+                self.pairs.append((texts[2], texts[3] + texts[4]))
                 return True
             elif not (is_num[1] and is_num[2]):
                 # NEW   old     suffix  NEW     old
                 # NEW   prefix  old     NEW     old
-                self.pairs.append((texts[0], texts[1]+texts[2]))
+                self.pairs.append((texts[0], texts[1] + texts[2]))
                 self.pairs.append((texts[3], texts[4]))
                 return True
             return False
@@ -164,11 +172,12 @@ class Street:
         elif len(texts) == 6:
             # new old suffix new old suffix
             if texts[0].text.isnumeric() and texts[3].text.isnumeric():
-                if (texts[1].text.isnumeric() or texts[2].text.isnumeric()) and \
-                    (texts[4].text.isnumeric() or texts[5].text.isnumeric()):
+                if (texts[1].text.isnumeric() or texts[2].text.isnumeric()) and (
+                    texts[4].text.isnumeric() or texts[5].text.isnumeric()
+                ):
 
-                    self.pairs.append((texts[0], texts[1]+texts[2]))
-                    self.pairs.append((texts[0], texts[4]+texts[5]))
+                    self.pairs.append((texts[0], texts[1] + texts[2]))
+                    self.pairs.append((texts[0], texts[4] + texts[5]))
                     return True
             return False
 
@@ -180,15 +189,15 @@ class Street:
 
         for new, old in self.pairs:
             # find the right-most old start
-            if new.col < left_most_new_col:
+            if new.left < left_most_new_col:
                 left_most_new = new
-                left_most_new_col = new.col
+                left_most_new_col = new.left
                 left_most_width = old.bbox[2]  # right bbox edge
         column_one = []
         column_two = []
 
         for new, old in self.pairs:
-            if new.col > left_most_width:
+            if new.left > left_most_width:
                 column_two.append((new, old))
             else:
                 column_one.append((new, old))
@@ -206,17 +215,21 @@ class Street:
         column = make_column_dataframe(col_one)
 
         if col_two:
-            # col one is oddd and col two is even
+            # col one is odd and col two is even
             col_one_oddeven = 0
             col_two_oddeven = 1
+            logger.debug("{}: column 1 is odd and column 2 is even", self.name)
         elif (column["address"].mod(2)).mode()[0] == 0:
             # find whether most are even or odd
 
             # col one is even
             col_one_oddeven = 1
+            logger.debug("{}: a single even column", self.name)
+
         else:
             # col one is odd
             col_one_oddeven = 0
+            logger.debug("{}: a single odd column", self.name)
 
         column.loc[column["address"].mod(2) == col_one_oddeven, "address"] = nan
 
@@ -241,20 +254,20 @@ class Street:
 
         return error_count
 
-
-    def output(self, infile_name: str, outfile: csv.DictWriter):
+    def output(self, column: int, outfile: csv.DictWriter):
         for new, old in self.pairs:
             outfile.writerow(
                 {
                     "page": self.page_id,
-                    "filename": infile_name,
+                    "column": column,
+                    "line_num": new.line_num,
                     "street": self.name,
-                    "old": old.text,
                     "new": new.text,
-                    "old_conf": old.conf,
+                    "old": old.text,
                     "new_conf": new.conf,
-                    "old_bbox": old.bbox,
+                    "old_conf": old.conf,
                     "new_bbox": new.bbox,
+                    "old_bbox": old.bbox,
                 }
             )
 
@@ -278,39 +291,7 @@ def mono_score(series, i):
     index = series.index < i
     comparison = diff != index
 
-
-
     return comparison.where(series.notna()).sum() ** 2 / len(series)
-
-
-def prepare_ocr_data(filename: str) -> pd.DataFrame:
-
-    # Get verbose data including boxes, confidences, line and page numbers
-
-    ocr_data = pytesseract.image_to_data(
-        Image.open(filename),
-        output_type=pytesseract.Output.DATAFRAME,
-        config="--tessdata-dir {} -l 1909 --psm 6".format(TESSDATADIR),  # Assume a single uniform block of text.
-    ).dropna()
-
-    # we assume the mode is the basic row, and throw out everything that's
-    # three times the height of that
-    height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
-   
-    ocr_data = ocr_data[ocr_data["height"] <= height_mode * 3]
-    
-    # and lets throw out anything that's less than 75% the height of the regular row
-    ocr_data = ocr_data[ocr_data["height"] > height_mode * 0.75]
-
-    # filter out common OCR errors
-    ocr_data = ocr_data[~ocr_data["text"].isin(FILTER_OUT)]
-
-    # filter out horiz lines
-    ocr_data = ocr_data[ocr_data["text"].apply(filter_horiz_lines)]
-
-    ocr_data["right"] = ocr_data["left"] + ocr_data["width"]
-    ocr_data["bot"] = ocr_data["top"] + ocr_data["height"]
-    return ocr_data
 
 
 def set_error(df, group_id, error_msg):
@@ -323,125 +304,159 @@ def set_error(df, group_id, error_msg):
     ] = error_msg
 
 
-@click.command()
-@click.argument("filename", type=click.Path(exists=True))
-@click.argument("output", type=click.Path())
-@click.option("--errors", type=click.Path())
-@click.option("--prev_csv", type=click.Path(exists=True))
-def ocr_column(filename, output, errors, prev_csv=None):
-    """get our best information"""
+def get_previous_street_name(column_id: int, output_path) -> str:
+    """Based on the column id and file location, try to find a previous column's
+    output in order to get the last know street name, so we can continue
+    if necessary.
+    """
+    if column_id > 1:
+        prev_csv = output_path.with_stem("column-{}-ocr".format(column_id - 1))
+        if not prev_csv.exists():
+            logger.warning("Can't find expected previous column {}\n".format(prev_csv))
+            return None
+        else:
+            logger.info("Looking in {} for previous street name.", prev_csv)
+            # get the last row of the csv
+            try:
+                return [x for x in csv.DictReader(open(prev_csv))][-1]["street"]
+            except IndexError:
+                logger.warning(
+                    "Can't find a previous street name in {}\n".format(prev_csv)
+                )
+                return None
+    else:
+        return None
 
+
+@click.command()
+@click.argument("filename", type=click.Path(exists=True, path_type=pathlib.Path))
+@click.argument("output", type=click.Path(path_type=pathlib.Path))
+@click.option(
+    "--errors",
+    type=click.Path(),
+    help="Write out some errors to this file in csv format.",
+)
+@click.option("--verbose", is_flag=True, help="Verbose mode.")
+@click.option("--debug", is_flag=True, help="Debug mode.")
+def ocr_column(filename: pathlib.Path, output, errors, verbose=False, debug=False):
+    """
+    Read in the raw ocr from csv, transform it into street-based address transformation and apply basic error catching.
+    """
+
+    # set up logging
+    if debug:
+        logger.add(sys.stderr, format="<level>{message}</level>", level="DEBUG")
+    elif verbose:
+        logger.add(sys.stderr, format="<level>{message}</level>", level="INFO")
+    else:
+        logger.add(sys.stderr, format="<level>{message}</level>", level="SUCCESS")
+
+    # figure out our context
+    page_id = filename.parent.name
+    column_id = int(re.match(r"column-([0-9]+)", filename.name).group(1))
+    logger.info("Considering column {} on page {}", column_id, page_id)
+    prev_street_name = get_previous_street_name(column_id, output)
+
+    # read in the raw ocr data
     ocr_data = pd.read_csv(filename)
 
-    page_id = pathlib.Path(filename).parent.name
+    street_info = handle_data(ocr_data, page_id, prev_street_name, errors)
 
+    with open(output, "w") as output_fp:
+        output_csv = csv.DictWriter(
+            output_fp,
+            [
+                "page",
+                "column",
+                "line_num",
+                "street",
+                "new",
+                "old",
+                "new_conf",
+                "old_conf",
+                "new_bbox",
+                "old_bbox",
+            ],
+            quoting=csv.QUOTE_NONNUMERIC,
+        )
+        output_csv.writeheader()
+        for street in street_info:
+            if street.pairs:
+                errors = street.check_assumptions()
+                logger.success(
+                    "{}: {} pairs, {} numeric order errors".format(
+                        street.name, len(street.pairs), errors
+                    )
+                )
+                street.output(column=column_id, outfile=output_csv)
+
+
+def handle_data(
+    ocr_data: pd.DataFrame, page_id: int, prev_street_name: str, error_file
+):
     height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
     ocr_data["error"] = ""
 
     # group it into horizontally-aligned groups
     grouped = ocr_data.groupby(["block_num", "par_num", "line_num"])
 
-    # print(ocr_data["height"].describe())
+    current_street = Street(prev_street_name, page_id=page_id)
 
-    if os.path.exists("known_streets.json"):
-        known_streets = json.load(open("known_streets.json"))
-    else:
-        known_streets = None
-
-    if prev_csv:
-        # get the last row of the csv
-        try:
-            prev_street = [x for x in csv.DictReader(open(prev_csv))][-1]["street"]
-        except IndexError:
-            sys.stderr.write("{}: can't find a previous street name in {}\n".format(filename, prev_csv))
-            sys.exit(1)
-        current_street = Street(prev_street, page_id=page_id)
+    if prev_street_name:
         streets = [current_street]
-        print("starting with {}".format(prev_street))
-    elif known_streets:
-        current_street = Street(known_streets[0], page_id=page_id)
-
-        streets = [current_street]
+        logger.info("continuing with {}".format(prev_street_name))
     else:
         streets = []
-        current_street = Street(None, page_id=page_id)
 
     failed_groups = []
     error_count = 0
     success_count = 0
-    for group_id, group in grouped:
-        result = False
 
-        row_height, texts = parse_group(group)
+    for group_id, group in grouped:
+
+        line_num = group_id[-1]
+
+        result = False
+        row_height, texts = parse_ocr_row(group, line_num)
         combined_text = " ".join(x.text for x in texts)
+
         if row_height > 1.3 * height_mode or probable_street_name(combined_text):
             # this is a street name probably
-            if not known_streets:
-                current_street = Street(name=combined_text, page_id=page_id)
-                streets.append(current_street)
-                result = True
-            else:
-                new_street_name = combined_text
-                if new_street_name in known_streets:
-                    new_street_name = known_streets[new_street_name]
-                    if new_street_name != current_street.name:
-                        current_street = Street(new_street_name, page_id=page_id)
-                        streets.append(current_street)
-                        result = True
-        elif within(row_height, 0.2, height_mode):
+            current_street = Street(name=combined_text, page_id=page_id)
+            streets.append(current_street)
+            result = True
 
+        elif within(row_height, 0.2, height_mode):
             result = current_street.parse_row(texts)
             if not result:
                 set_error(ocr_data, group_id, "{} unparsable".format(error_count))
-
                 error_count += 1
             else:
                 success_count += 1
         else:
             result = False
             set_error(ocr_data, group_id, "{} bad row height".format(error_count))
-
             error_count += 1
 
         if not result:
             failed_groups.append(group_id)
 
     if error_count:
-        print(
+        logger.warning(
             "{} ({:0.1%}) rejected OCR groups.".format(
                 error_count, error_count / (error_count + success_count)
             )
         )
-        groups = [grouped.get_group(i) for i in failed_groups]
-        failures = pd.concat(groups, axis=0, join="outer")
-        failures.to_csv(errors, quoting=csv.QUOTE_NONNUMERIC)
-        if error_count / (error_count + success_count) > .15:
-            print("Too many OCR errors, aborting. Fix the image, or reevaluate your life")
+        if error_file:
+            groups = [grouped.get_group(i) for i in failed_groups]
+            failures = pd.concat(groups, axis=0, join="outer")
+            failures.to_csv(error_file, quoting=csv.QUOTE_NONNUMERIC)
+        if error_count / (error_count + success_count) > 0.15:
+            logger.error(
+                "Too many OCR errors, aborting. Fix the image, or reevaluate your life"
+            )
             sys.exit(1)
-    with open(output, "w") as output_fp:
-        output_csv = csv.DictWriter(
-            output_fp,
-            ["page",
-                "filename",
-                "street",
-                "old",
-                "new",
-                "old_conf",
-                "new_conf",
-                "old_bbox",
-                "new_bbox",
-            ],
-        )
-        output_csv.writeheader()
-        for street in streets:
-            if street.pairs:
-                errors = street.check_assumptions()
-                print(
-                    "{}: {} pairs, {} numeric order errors".format(
-                        street.name, len(street.pairs), errors
-                    )
-                )
-                street.output(infile_name=filename, outfile=output_csv)
+    return streets
 
 
 if __name__ == "__main__":
