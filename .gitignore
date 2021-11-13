@@ -4,3 +4,4 @@ working/*/column*
 working/*/*.csv
 Pipfile.lock
 working/page-subset.pdf
+working/*/page-crop.png
