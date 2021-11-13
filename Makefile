@@ -43,5 +43,6 @@ remake_pages:	working/page-subset.pdf
 	        $(MAKE) -C $$dir remake_page;\
 		done
 
-
+report:
+	python processors/report.py
 #.PHONY: spanners

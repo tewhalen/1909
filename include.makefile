@@ -3,7 +3,7 @@
 
 #TOP := $(dir $(CURDIR)/$(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST)))
 TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-
+PAGE_ID = $(notdir $(CURDIR))
 COL_NOS = 1 2 3 4 5
 COLUMNS = $(addprefix column-,$(COL_NOS))
 COL_IMGS = $(addsuffix .png, $(COLUMNS))
@@ -49,6 +49,14 @@ column-4.csv: column-4.png column-3.csv
 
 column-5.csv: column-5.png column-4.csv
 	$(TOP)/processors/ocr_column.py $< $@ --prev_csv column-4.csv --errors column-5-e.csv --page_id $(notdir $(CURDIR))
+
+train: $(COL_IMGS)
+	$(TOP)/processors/generate_train_data.py column-1.png p$(PAGE_ID)-c1
+	$(TOP)/processors/generate_train_data.py column-2.png p$(PAGE_ID)-c2
+	$(TOP)/processors/generate_train_data.py column-3.png p$(PAGE_ID)-c3
+	$(TOP)/processors/generate_train_data.py column-4.png p$(PAGE_ID)-c4
+	$(TOP)/processors/generate_train_data.py column-5.png p$(PAGE_ID)-c5
+
 
 page.csv: $(INFO)
 	csvstack $^ > page.csv
