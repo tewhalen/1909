@@ -5,6 +5,8 @@ import json
 import os
 import sys
 import typing
+import itertools
+import pathlib
 
 import click
 import pandas as pd
@@ -14,7 +16,7 @@ from PIL import Image, ImageDraw
 
 FILTER_OUT = ["|"]
 
-TESSDATADIR = "../../"
+TESSDATADIR = pathlib.Path(__file__).parent.parent
 
 def filter_horiz_lines(text: str):
     "returns true if this is not just horizontal line stuff"
@@ -62,10 +64,23 @@ class Text:
         d['bot'] = min(self.bbox[3], other.bbox[3])
         return Text(d)
 
+    def split(self):
+        "split this if it has a |"
+        texts = []
+        if "|" in self.text:
+            for subtext in self.text.split("|"):
+                d = {'text':subtext,'conf':self.conf, 'top':self.row,'left':self.col,'right':self.bbox[2],'bot':self.bbox[3]}
+                texts.append(Text(d))
+        else:
+            texts = [self]
+        return texts
+
 def parse_group(group):
 
     row_height = group["height"].min()
-    return (row_height, [Text(row) for i, row in group.iterrows()])
+    texts = [Text(row).split() for i, row in group.iterrows()]
+    texts = list(itertools.chain.from_iterable(texts))
+    return (row_height, texts)
 
 
 def within(x, pct, value):
@@ -313,25 +328,12 @@ def set_error(df, group_id, error_msg):
 @click.argument("output", type=click.Path())
 @click.option("--errors", type=click.Path())
 @click.option("--prev_csv", type=click.Path(exists=True))
-@click.option("--page_id", type=int)
-@click.option("--debug_image", type=click.Path())
-def ocr_column(filename, output, errors, prev_csv=None, page_id=0, debug_image=None):
+def ocr_column(filename, output, errors, prev_csv=None):
     """get our best information"""
 
-    ocr_data = prepare_ocr_data(filename)
+    ocr_data = pd.read_csv(filename)
 
-
-    if debug_image:
-        # output a marked-up debug image
-        base_img = Image.open(filename)
-        draw = ImageDraw.Draw(base_img)
-        for index, row in ocr_data.iterrows():
-            draw.rectangle((row.right, row.bot, row.left, row.top))
-            draw.text((row.left, row.bot), row.text, color="red")
-            #print(index, row['right'],row['left'],row.conf)
-        base_img.save(debug_image)
-
-
+    page_id = pathlib.Path(filename).parent.name
 
     height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
     ocr_data["error"] = ""
@@ -413,6 +415,9 @@ def ocr_column(filename, output, errors, prev_csv=None, page_id=0, debug_image=N
         groups = [grouped.get_group(i) for i in failed_groups]
         failures = pd.concat(groups, axis=0, join="outer")
         failures.to_csv(errors, quoting=csv.QUOTE_NONNUMERIC)
+        if error_count / (error_count + success_count) > .15:
+            print("Too many OCR errors, aborting. Fix the image, or reevaluate your life")
+            sys.exit(1)
     with open(output, "w") as output_fp:
         output_csv = csv.DictWriter(
             output_fp,
@@ -432,7 +437,7 @@ def ocr_column(filename, output, errors, prev_csv=None, page_id=0, debug_image=N
             if street.pairs:
                 errors = street.check_assumptions()
                 print(
-                    "{}: {} pairs, {} odd/even/order errors".format(
+                    "{}: {} pairs, {} numeric order errors".format(
                         street.name, len(street.pairs), errors
                     )
                 )

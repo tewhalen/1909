@@ -2,6 +2,7 @@
 import os
 import sys
 import shutil
+import pathlib
 
 import click
 import numpy as np
@@ -41,9 +42,9 @@ def crop_page(filename, output, force):
     """deskew using horizontal lines and intelligently crop
     
     unless page-handcrop.png exists, in which case copy that."""
-
-    if os.path.exists("page-handcrop.png") and not force:
-        shutil.copy("page-handcrop.png", output)
+    handcrop = pathlib.Path(filename).with_name('page-handcrop.png')
+    if handcrop.exists() and not force:
+        shutil.copy(handcrop, output)
         sys.stderr.write("%s: page-handcrop.png exists, using it to override.\n" % (filename,))
 
         sys.exit()

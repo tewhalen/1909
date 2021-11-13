@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import pathlib
 
 import click
 import peakutils
@@ -15,7 +16,7 @@ from street_correct import divide_into_rows, divide_slip, find_five_columns
 
 
 
-def save_column(im, i, column):
+def save_column(im, i, column, savepath):
     """Save this column"""
 
     ftif = "column-%d.png" % (i + 1)
@@ -24,7 +25,7 @@ def save_column(im, i, column):
     # horizontal deskew
     trimmed = deskew(trimmed, axis=0)
     # trimmed = silly_crop(trimmed)
-    trimmed.save(ftif, "PNG")
+    trimmed.save(savepath / ftif, "PNG")
     return trimmed
 
 
@@ -55,8 +56,9 @@ def split_page(filename):
     # clips = get_columns(vlines, top_bar, im.size)
     # sys.stderr.write("%s: cols: %d\n" % (filename, len(clips)))
 
+    savepath = pathlib.Path(filename).parent
     for i, col in enumerate(clips):
-        trimmed_column = save_column(im, i, col)
+        trimmed_column = save_column(im, i, col, savepath)
 
 
 if __name__ == "__main__":
