@@ -29,6 +29,7 @@ working/page-subset.pdf: source/house-renumbering-1909.PDF
        -sOutputFile=$@ $<
  
 working/%/page.png: working/page-subset.pdf 
+	@mkdir -p $(@D)
 	convert +dither -colors 2 -colorspace gray -normalize -density 600x600 working/page-subset.pdf[$*] working/$*/page.png
 
 working/%/page-crop.png: working/%/page.png
