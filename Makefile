@@ -16,6 +16,7 @@ TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 all: $(OCRFULL)
 
+
 clean:
 		@for dir in $(PAGE_DIRS); do \
 				$(MAKE) -C $$dir clean;\
@@ -57,16 +58,16 @@ working/%/column-1-ocr.csv: working/%/column-1-raw_ocr.csv
 	processors/ocr_column.py $< $@ --errors working/$*/column-1-e.csv 
 
 working/%/column-2-ocr.csv: working/%/column-2-raw_ocr.csv working/%/column-1-ocr.csv
-	processors/ocr_column.py $< $@ --prev_csv working/$*/column-1.csv --errors working/$*/column-2-e.csv 
+	processors/ocr_column.py $< $@ --prev_csv working/$*/column-1-ocr.csv --errors working/$*/column-2-e.csv 
 
 working/%/column-3-ocr.csv: working/%/column-3-raw_ocr.csv working/%/column-2-ocr.csv
-	processors/ocr_column.py $< $@ --prev_csv working/$*/column-2.csv --errors working/$*/column-3-e.csv 
+	processors/ocr_column.py $< $@ --prev_csv working/$*/column-2-ocr.csv --errors working/$*/column-3-e.csv 
 
 working/%/column-4-ocr.csv: working/%/column-4-raw_ocr.csv working/%/column-3-ocr.csv
-	processors/ocr_column.py $< $@ --prev_csv working/$*/column-3.csv --errors working/$*/column-4-e.csv 
+	processors/ocr_column.py $< $@ --prev_csv working/$*/column-3-ocr.csv --errors working/$*/column-4-e.csv 
 
 working/%/column-5-ocr.csv: working/%/column-5-raw_ocr.csv working/%/column-4-ocr.csv
-	processors/ocr_column.py $< $@ --prev_csv working/$*/column-4.csv --errors working/$*/column-5-e.csv 
+	processors/ocr_column.py $< $@ --prev_csv working/$*/column-4-ocr.csv --errors working/$*/column-5-e.csv 
 
 working/%/page.csv: working/%/column-1-ocr.csv working/%/column-2-ocr.csv working/%/column-3-ocr.csv working/%/column-4-ocr.csv working/%/column-5-ocr.csv
 	csvstack $^ > $@
