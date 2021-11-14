@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-import os
-import sys
 import pathlib
+import sys
 
 import click
-import peakutils
+from loguru import logger
 from PIL import Image
 from shapely.geometry import Polygon
 
@@ -14,7 +13,7 @@ from street_correct import divide_into_rows, divide_slip, find_five_columns
 # print(sys.path)
 
 
-
+logger.remove()
 
 def save_column(im, i, column, savepath):
     """Save this column"""
@@ -39,17 +38,20 @@ def get_columns(bar_limits, im_size):
         cols.append(p)
     return cols
 
-
+@logger.catch
 @click.command()
 @click.argument("filename", type=click.Path(exists=True))
 def split_page(filename):
     """Extract columns from spreadsheet-like image file"""
+
+    logger.add(sys.stderr, format="<level>{message}</level>",backtrace=True, level="INFO")
+
     im = Image.open(filename)
     try:
         column_limits = find_five_columns(im)
         clips = get_columns(column_limits, im.size)
     except RuntimeError:
-        sys.stderr.write("%s: can't split into columns\n" % (filename))
+        logger.critical("{}: can't split into columns",filename)
         sys.exit(1)
     # sys.stderr.write("%s: %d columns detected\n" % (filename, len(vlines)))
 

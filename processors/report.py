@@ -3,16 +3,47 @@ import sys
 import pathlib
 import numpy as np
 from numpy.core.fromnumeric import std
+import pandas
 
+def get_csv_confidence_std(page):
+    try:
+        d = pandas.read_csv(page)
+    except pandas.errors.ParserError:
+        print("error in", page)
+        return 0
+    try:
+        return min(d['new_conf'].mean(), d['old_conf'].mean()), max(d['new_conf'].std(), d['old_conf'].std())
+    except KeyError:
+        print("error in", page)
+        return 0
 
 def report():
     working = pathlib.Path("working")
 
     page_dirs = [x for x in working.iterdir() if x.is_dir()]
+    page_dirs.sort()
     
-    fails = set()
+    fails = {x for x in page_dirs if  (x / "page.csv").exists()}
+    conf_std_page = [(get_csv_confidence_std(x/"page.csv"),x) for x in fails]
+    confidences = [(n[0], x) for n,x in conf_std_page]
+    confidences.sort()
+    print("Least confident pages:")
+    for conf, pagedir in confidences[:10]:
+        print("\t{:.02f} {}".format(conf, pagedir))
+        
+    deviances = [(n[1], x) for n,x in conf_std_page]
+    deviances.sort(reverse=True)
+    print("Most deviant pages:")
+    for conf, pagedir in deviances[:10]:
+        print("\t{:.02f} {}".format(conf, pagedir))
     
-    failed_crops = [x for x in page_dirs if not (x / "page-crop.png").exists()]
+    for conf, pagedir in confidences:
+        if conf == 0:
+            print(pagedir/"*.csv",end="  ")
+    
+
+
+    failed_crops = [x for x in page_dirs if x not in fails and not (x / "page-crop.png").exists()]
     fails.update(failed_crops)
     if failed_crops:
         print("failed to auto-crop ({} pages): {}".format(len(failed_crops),", ".join(x.name for x in failed_crops)))

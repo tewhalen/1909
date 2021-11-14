@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 import os
-import sys
-import shutil
 import pathlib
+import shutil
+import sys
 
 import click
 import numpy as np
 import peakutils
+from loguru import logger
 from PIL import Image
-
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from image_utils import deskew, get_histogram, new_crop, newish_crop
 
+#sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+
+logger.remove()
 def find_top_two_lines(img):
     """Each page has two horizontal lines running across the top"""
     wd, ht = img.size
@@ -42,42 +44,45 @@ def crop_page(filename, output, force):
     """deskew using horizontal lines and intelligently crop
     
     unless page-handcrop.png exists, in which case copy that."""
+
+    logger.add(sys.stderr, format="<level>{message}</level>", level="INFO")
+
     handcrop = pathlib.Path(filename).with_name('page-handcrop.png')
     if handcrop.exists() and not force:
         shutil.copy(handcrop, output)
-        sys.stderr.write("%s: page-handcrop.png exists, using it to override.\n" % (filename,))
+        logger.success("%s: page-handcrop.png exists, using it to override.\n" % (filename,))
 
         sys.exit()
 
     im = Image.open(filename)
     # pix = im.load()
     width, height = im.size
-    sys.stderr.write("%s: %dx%d\n" % (filename, width, height))
-    sys.stderr.write("%s: deskewing horiz " % (filename,))
-    sys.stderr.flush()
+    logger.info("%s: %dx%d\n" % (filename, width, height))
+    logger.info("%s: deskewing horiz " % (filename,))
+    
 
     im = deskew(im)
 
     width, height = im.size
-    sys.stderr.write("(%dx%d)\n" % (width, height))
+    logger.info("(%dx%d)\n" % (width, height))
 
     try:
-        sys.stderr.write("%s: removing top two lines.\n" % (filename,))
+        logger.debug("%s: removing top two lines.\n" % (filename,))
 
         im = topline_crop(im)
     except:
-        sys.stderr.write("%s: failed to find the top two lines.\n" % (filename,))
+        logger.critical("%s: failed to find the top two lines.\n" % (filename,))
         sys.exit(1)
     width, height = im.size
 
-    sys.stderr.write("%s: deskewing vert\n" % (filename,))
+    logger.info("%s: deskewing vert\n" % (filename,))
     im = deskew(im, axis=1)
     width, height = im.size
 
     # sys.stderr.write("%s: cropping\n" % (filename,))
     # im = newish_crop(im)
     # width, height = im.size
-    sys.stderr.write("%s: revised to %dx%d\n" % (filename, width, height))
+    logger.info("%s: revised to %dx%d\n" % (filename, width, height))
     im.save(output)
 
 

@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image, ImageOps
 from scipy.ndimage import interpolation as inter
 from scipy.ndimage import label, morphology
-
+from loguru import logger
 DEBUG = False
 
 
@@ -384,7 +384,7 @@ def deskew(img, delta=0.1, limit=1, axis=0, simple=False):
 
     best_score = max(scores)
     best_angle, best_hist = scores[best_score]
-    print("Best angle: {}".format(best_angle))
+    logger.info("Best angle: {}",best_angle)
 
     # correct skew
     data = inter.rotate(bin_img, best_angle, reshape=False, order=0)

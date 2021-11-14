@@ -13,6 +13,9 @@ import pandas as pd
 import pytesseract
 from numpy import nan
 from PIL import Image, ImageDraw
+from loguru import logger
+
+logger.remove()
 
 FILTER_OUT = ["|"]
 
@@ -63,8 +66,15 @@ def prepare_ocr_data(filename: str) -> pd.DataFrame:
 @click.option("--debug_image", type=click.Path())
 def ocr_column(filename, output, debug_image=None):
     """get our best information"""
+    logger.add(sys.stderr, format="<level>{message}</level>",backtrace=True, level="INFO")
 
     ocr_data = prepare_ocr_data(filename)
+
+    conf = ocr_data['conf'].mean()
+    if conf < 85:
+        logger.warning("{} average OCR confidence: {:.2f}",filename, ocr_data['conf'].mean())
+    else:
+        logger.info("{} average OCR confidence: {:.2f}",filename, ocr_data['conf'].mean())
 
     ocr_data.to_csv(output, quoting=csv.QUOTE_NONNUMERIC)
 

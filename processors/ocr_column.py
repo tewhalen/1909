@@ -453,7 +453,7 @@ def handle_data(
             failures.to_csv(error_file, quoting=csv.QUOTE_NONNUMERIC)
         if error_count / (error_count + success_count) > 0.15:
             logger.error(
-                "Too many OCR errors, aborting. Fix the image, or reevaluate your life"
+                "{}: Too many OCR errors, aborting. Fix the image, or reevaluate your life", page_id
             )
             sys.exit(1)
     return streets
