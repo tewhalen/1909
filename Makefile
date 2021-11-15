@@ -12,12 +12,24 @@ OCRFULL = $(addsuffix /page.csv,$(PAGE_DIRS))
 
 TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PRECIOUS: working/%/column-1-raw_ocr.csv working/%/column-2-raw_ocr.csv working/%/column-3-raw_ocr.csv working/%/column-4-raw_ocr.csv working/%/column-5-raw_ocr.csv working/%/page.png
+.PRECIOUS: working/%/column-1-raw_ocr.csv working/%/column-2-raw_ocr.csv working/%/column-3-raw_ocr.csv working/%/column-4-raw_ocr.csv working/%/column-5-raw_ocr.csv working/%/page.png working/%/column-1.png
+
+# ".SECONDARY with no prerequisites causes all targets to be treated as secondary 
+# (i.e., no target is removed because it is considered intermediate). 
+# does this work?
+.SECONDARY:
 
 all: $(OCRFULL)
 
 
-clean:
+ocr_clean:
+	rm -f working/*/column*ocr*.csv working/*/page.csv
+
+img_clean:
+	rm -f working/*/column*.png working/*/page-crop.png
+
+
+clean: ocr_clean img_clean
 		@for dir in $(PAGE_DIRS); do \
 				$(MAKE) -C $$dir clean;\
 		done
