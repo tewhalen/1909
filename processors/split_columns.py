@@ -7,13 +7,12 @@ from loguru import logger
 from PIL import Image
 from shapely.geometry import Polygon
 
-from image_utils import auto_crop, deskew, new_crop, silly_crop
-from street_correct import divide_into_rows, divide_slip, find_five_columns
-
-# print(sys.path)
+from image_utils import deskew
+from street_correct import find_five_columns
 
 
 logger.remove()
+
 
 def save_column(im, i, column, savepath):
     """Save this column"""
@@ -38,20 +37,30 @@ def get_columns(bar_limits, im_size):
         cols.append(p)
     return cols
 
+
 @logger.catch
 @click.command()
 @click.argument("filename", type=click.Path(exists=True))
 def split_page(filename):
     """Extract columns from spreadsheet-like image file"""
 
-    logger.add(sys.stderr, format="<level>{message}</level>",backtrace=True, level="INFO")
+    logger.add(
+        sys.stderr, format="<level>{message}</level>", backtrace=True, level="INFO"
+    )
+
+    handcrop = pathlib.Path(filename).with_name("page-handcrop.png")
+    if handcrop.exists():
+        logger.success(
+            "%s: page-handcrop.png exists, using it to override.\n" % (filename,)
+        )
+        filename = handcrop
 
     im = Image.open(filename)
     try:
         column_limits = find_five_columns(im)
         clips = get_columns(column_limits, im.size)
     except RuntimeError:
-        logger.critical("{}: can't split into columns",filename)
+        logger.critical("{}: can't split into columns", filename)
         sys.exit(1)
     # sys.stderr.write("%s: %d columns detected\n" % (filename, len(vlines)))
 
@@ -60,7 +69,7 @@ def split_page(filename):
 
     savepath = pathlib.Path(filename).parent
     for i, col in enumerate(clips):
-        trimmed_column = save_column(im, i, col, savepath)
+        save_column(im, i, col, savepath)
 
 
 if __name__ == "__main__":

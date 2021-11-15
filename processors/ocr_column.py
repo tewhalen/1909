@@ -1,18 +1,16 @@
 #!/usr/bin/env python
 
-
+import copy
 import csv
 import itertools
-
 import pathlib
 import re
 import sys
 import typing
-import copy
 
-from loguru import logger
 import click
 import pandas as pd
+from loguru import logger
 from numpy import nan
 
 logger.remove()
@@ -184,13 +182,11 @@ class Street:
     def divide_into_columns(self) -> typing.Tuple[list, list]:
         # so first we divide into two columns
         left_most_new_col = 9999
-        left_most_new = None
         left_most_width = 0
 
         for new, old in self.pairs:
             # find the right-most old start
             if new.left < left_most_new_col:
-                left_most_new = new
                 left_most_new_col = new.left
                 left_most_width = old.bbox[2]  # right bbox edge
         column_one = []
@@ -217,7 +213,6 @@ class Street:
         if col_two:
             # col one is odd and col two is even
             col_one_oddeven = 0
-            col_two_oddeven = 1
             logger.debug("{}: column 1 is odd and column 2 is even", self.name)
         elif (column["address"].mod(2)).mode()[0] == 0:
             # find whether most are even or odd
@@ -393,7 +388,7 @@ def ocr_column(filename: pathlib.Path, output, errors, verbose=False, debug=Fals
 
 
 def handle_data(
-    ocr_data: pd.DataFrame, page_id: int, prev_street_name: str, error_file,force: bool
+    ocr_data: pd.DataFrame, page_id: int, prev_street_name: str, error_file, force: bool
 ):
     height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
     ocr_data["error"] = ""
@@ -454,7 +449,8 @@ def handle_data(
             failures.to_csv(error_file, quoting=csv.QUOTE_NONNUMERIC)
         if not force and error_count / (error_count + success_count) > 0.15:
             logger.error(
-                "{}: Too many OCR errors, aborting. Fix the image, or reevaluate your life", page_id
+                "{}: Too many OCR errors, aborting. Fix the image, or reevaluate your life",
+                page_id,
             )
             sys.exit(1)
     return streets

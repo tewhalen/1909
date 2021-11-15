@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-import os
 import pathlib
 import shutil
 import sys
 
 import click
-import numpy as np
 import peakutils
 from loguru import logger
 from PIL import Image
 
-from image_utils import deskew, get_histogram, new_crop, newish_crop
+from image_utils import deskew, get_histogram
 
-#sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+# sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 
 logger.remove()
+
+
 def find_top_two_lines(img):
     """Each page has two horizontal lines running across the top"""
     wd, ht = img.size
@@ -39,18 +39,24 @@ def topline_crop(img: Image):
 @click.command()
 @click.argument("filename", type=click.Path(exists=True))
 @click.argument("output", type=click.Path())
-@click.option("--force", is_flag=True, help="Force auto-cropping even if the override file exists.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force auto-cropping even if the override file exists.",
+)
 def crop_page(filename, output, force):
     """deskew using horizontal lines and intelligently crop
-    
+
     unless page-handcrop.png exists, in which case copy that."""
 
     logger.add(sys.stderr, format="<level>{message}</level>", level="INFO")
 
-    handcrop = pathlib.Path(filename).with_name('page-handcrop.png')
+    handcrop = pathlib.Path(filename).with_name("page-handcrop.png")
     if handcrop.exists() and not force:
         shutil.copy(handcrop, output)
-        logger.success("%s: page-handcrop.png exists, using it to override.\n" % (filename,))
+        logger.success(
+            "%s: page-handcrop.png exists, using it to override.\n" % (filename,)
+        )
 
         sys.exit()
 
@@ -59,7 +65,6 @@ def crop_page(filename, output, force):
     width, height = im.size
     logger.info("%s: %dx%d\n" % (filename, width, height))
     logger.info("%s: deskewing horiz " % (filename,))
-    
 
     im = deskew(im)
 
