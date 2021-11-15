@@ -360,7 +360,8 @@ def ocr_column(filename: pathlib.Path, output, errors, verbose=False, debug=Fals
     # read in the raw ocr data
     ocr_data = pd.read_csv(filename)
 
-    street_info = handle_data(ocr_data, page_id, prev_street_name, errors)
+    force = filename.with_name("force-ocr").exists()
+    street_info = handle_data(ocr_data, page_id, prev_street_name, errors, force)
 
     with open(output, "w") as output_fp:
         output_csv = csv.DictWriter(
@@ -392,7 +393,7 @@ def ocr_column(filename: pathlib.Path, output, errors, verbose=False, debug=Fals
 
 
 def handle_data(
-    ocr_data: pd.DataFrame, page_id: int, prev_street_name: str, error_file
+    ocr_data: pd.DataFrame, page_id: int, prev_street_name: str, error_file,force: bool
 ):
     height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
     ocr_data["error"] = ""
@@ -451,7 +452,7 @@ def handle_data(
             groups = [grouped.get_group(i) for i in failed_groups]
             failures = pd.concat(groups, axis=0, join="outer")
             failures.to_csv(error_file, quoting=csv.QUOTE_NONNUMERIC)
-        if error_count / (error_count + success_count) > 0.15:
+        if not force and error_count / (error_count + success_count) > 0.15:
             logger.error(
                 "{}: Too many OCR errors, aborting. Fix the image, or reevaluate your life", page_id
             )
