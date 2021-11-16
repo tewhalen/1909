@@ -41,6 +41,7 @@ class Text:
         self.left = item["left"]
         self.right = item["right"]
         self.bot = item["bot"]
+        self.flag = False
 
     @property
     def bbox(self):
@@ -74,7 +75,7 @@ class Text:
         return texts
 
 
-def parse_ocr_row(group, line_num):
+def parse_ocr_row(group):
 
     row_height = group["height"].min()
     texts = [Text(row).split() for i, row in group.iterrows()]
@@ -181,22 +182,31 @@ class Street:
 
     def divide_into_columns(self) -> typing.Tuple[list, list]:
         # so first we divide into two columns
-        left_most_new_col = 9999
-        left_most_width = 0
+        # we'll leverage the line number for this
+
+        furthest_right_old = 0  # the start of the furthest-right old
+        left_most_c2_new = 0  # the start of the associated new
 
         for new, old in self.pairs:
             # find the right-most old start
-            if new.left < left_most_new_col:
-                left_most_new_col = new.left
-                left_most_width = old.bbox[2]  # right bbox edge
+            if old.left > furthest_right_old:
+                furthest_right_old = old.left
+                left_most_c2_new = new.left
+
         column_one = []
         column_two = []
 
         for new, old in self.pairs:
-            if new.left > left_most_width:
-                column_two.append((new, old))
-            else:
+            if new.right <= left_most_c2_new:
+                # doesn't overlap
                 column_one.append((new, old))
+            else:
+                column_two.append((new, old))
+        logger.debug(
+            "found {} left pairs and {} right pairs", len(column_one), len(column_two)
+        )
+        if not column_one:
+            return column_two, column_one
         return column_one, column_two
 
     def check_assumptions(self):
@@ -232,7 +242,12 @@ class Street:
         null_out_mono_errors(column, "address")
 
         for i in column[column["address"].isna()].index:
-            col_one[i][0].text = ""  # clear text of nas
+            logger.debug(
+                "{} doesn't seem right in row {}...",
+                col_one[i][0].text,
+                col_one[i][0].line_num,
+            )
+            col_one[i][0].flag = True  # clear text of nas
         error_count = column["address"].isnull().sum()
 
         if col_two:
@@ -244,7 +259,7 @@ class Street:
             null_out_mono_errors(column, "address")
 
             for i in column[column["address"].isna()].index:
-                col_two[i][0].text = ""  # clear text of nas
+                col_two[i][0].flag = True  # clear text of nas
             error_count += column["address"].isnull().sum()
 
         return error_count
@@ -263,6 +278,7 @@ class Street:
                     "old_conf": old.conf,
                     "new_bbox": new.bbox,
                     "old_bbox": old.bbox,
+                    "flag": new.flag or old.flag,
                 }
             )
 
@@ -331,20 +347,17 @@ def get_previous_street_name(column_id: int, output_path) -> str:
     type=click.Path(),
     help="Write out some errors to this file in csv format.",
 )
-@click.option("--verbose", is_flag=True, help="Verbose mode.")
-@click.option("--debug", is_flag=True, help="Debug mode.")
-def ocr_column(filename: pathlib.Path, output, errors, verbose=False, debug=False):
+@click.option("--normal", "log_level", flag_value="SUCCESS", default=True)
+@click.option("--verbose", "log_level", help="Verbose mode.", flag_value="INFO")
+@click.option("--debug", "log_level", help="Debug mode.", flag_value="DEBUG")
+def ocr_column(filename: pathlib.Path, output, errors, log_level):
     """
     Read in the raw ocr from csv, transform it into street-based address transformation and apply basic error catching.
     """
 
     # set up logging
-    if debug:
-        logger.add(sys.stderr, format="<level>{message}</level>", level="DEBUG")
-    elif verbose:
-        logger.add(sys.stderr, format="<level>{message}</level>", level="INFO")
-    else:
-        logger.add(sys.stderr, format="<level>{message}</level>", level="SUCCESS")
+
+    logger.add(sys.stderr, format="<level>{message}</level>", level=log_level)
 
     # figure out our context
     page_id = filename.parent.name
@@ -372,6 +385,7 @@ def ocr_column(filename: pathlib.Path, output, errors, verbose=False, debug=Fals
                 "old_conf",
                 "new_bbox",
                 "old_bbox",
+                "flag",
             ],
             quoting=csv.QUOTE_NONNUMERIC,
         )
@@ -393,6 +407,10 @@ def handle_data(
     height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
     ocr_data["error"] = ""
 
+    # unfortunately, sometimes there's more than one "paragraph" in the way
+    # the OCR segments the column, so we need to calcuate a unique line number
+    ocr_data["line_num"] = ocr_data["line_num"] + ((ocr_data["par_num"] - 1) * 1000)
+
     # group it into horizontally-aligned groups
     grouped = ocr_data.groupby(["block_num", "par_num", "line_num"])
 
@@ -410,10 +428,8 @@ def handle_data(
 
     for group_id, group in grouped:
 
-        line_num = group_id[-1]
-
         result = False
-        row_height, texts = parse_ocr_row(group, line_num)
+        row_height, texts = parse_ocr_row(group)
         combined_text = " ".join(x.text for x in texts)
 
         if row_height > 1.3 * height_mode or probable_street_name(combined_text):
