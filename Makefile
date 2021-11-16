@@ -28,6 +28,8 @@ ocr_clean:
 img_clean:
 	rm -f working/*/column*.png working/*/page-crop.png
 
+render_clean:
+	rm -f working/*/page.csv working/*/column-*-ocr.csv
 
 clean: ocr_clean img_clean
 		@for dir in $(PAGE_DIRS); do \
@@ -83,6 +85,9 @@ working/%/column-5-ocr.csv: working/%/column-5-raw_ocr.csv working/%/column-4-oc
 
 working/%/page.csv: working/%/column-1-ocr.csv working/%/column-2-ocr.csv working/%/column-3-ocr.csv working/%/column-4-ocr.csv working/%/column-5-ocr.csv
 	csvstack $^ > $@
+
+working/%/index.html: working/%/page.csv working/%/column-1.png working/%/column-2.png working/%/column-3.png working/%/column-4.png working/%/column-5.png
+	processors/reconstruct.py $(@D)
 
 remake_pages:	$(addsuffix /page.png,$(PAGE_DIRS))
 	
