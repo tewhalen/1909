@@ -35,15 +35,10 @@ clean: ocr_clean img_clean
 		done
 		rm working/page-subset.pdf
 
-
-working/page-subset.pdf: source/house-renumbering-1909.PDF
-	gs -q -sDEVICE=pdfwrite -dNOPAUSE -dBATCH -dSAFER \
-       -dFirstPage=7 -dLastPage=178 \
-       -sOutputFile=$@ $<
  
-working/%/page.png: working/page-subset.pdf 
+working/%/page.png: source/1910i.pdf 
 	@mkdir -p $(@D)
-	convert +dither -colors 2 -colorspace gray -normalize -density 600x600 working/page-subset.pdf[$*] working/$*/page.png
+	convert +dither -colors 2 -colorspace gray -normalize -density 600x600 $<[$*] working/$*/page.png
 
 working/%/page-crop.png: working/%/page.png
 	processors/auto_crop_page.py $< $@

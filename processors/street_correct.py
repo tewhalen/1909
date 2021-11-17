@@ -9,12 +9,11 @@ from itertools import accumulate, groupby
 import matplotlib.pyplot as plt
 import numpy as np
 import peakutils
+from loguru import logger
 from PIL import Image
 from shapely.geometry import Polygon
 
 from image_utils import deskew, get_histogram, new_crop
-
-
 
 DEBUG = False
 
@@ -153,7 +152,8 @@ def find_five_columns(img):
     debug("right distance apart:", proper_indexes)
 
     if len(proper_indexes) != 4:
-          # if not four bars, we have a problem
+        # if not four bars, we have a problem
+        logger.error("found {}, not 5 columns", proper_indexes)
         raise RuntimeError("can't split into 5 columns")
 
     prev_i = 0

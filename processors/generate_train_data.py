@@ -9,10 +9,11 @@ import typing
 import click
 import matplotlib.pyplot as plt
 import pandas as pd
-from pandas.core import base
 import pytesseract
 from numpy import nan
 from PIL import Image, ImageDraw
+import jinja2
+import pathlib
 
 FILTER_OUT = ["|"]
 
@@ -35,9 +36,7 @@ def prepare_ocr_data(filename: str) -> pd.DataFrame:
     ocr_data = pytesseract.image_to_data(
         Image.open(filename),
         output_type=pytesseract.Output.DATAFRAME,
-        config="--tessdata-dir {} -l 1909 --psm 6".format(
-            TESSDATADIR
-        ),  # Assume a single uniform block of text.
+        config="--psm 6",  # Assume a single uniform block of text.
     ).dropna()
 
     # we assume the mode is the basic row, and throw out everything that's
@@ -61,9 +60,9 @@ def prepare_ocr_data(filename: str) -> pd.DataFrame:
 
 
 @click.command()
-@click.argument("filename", type=click.Path(exists=True))
+@click.argument("filename", type=click.Path(exists=True, path_type=pathlib.Path))
 @click.argument("prefix", type=str)
-def make_training_data(filename, prefix):
+def make_training_data(filename: pathlib.Path, prefix):
     """OCR the file, find the segments that are either
     a) more than a standard deviation under the mean condfidence level; or
     b) aren't entirely numeric
@@ -78,23 +77,34 @@ def make_training_data(filename, prefix):
     mean_conf = ocr_data["conf"].mean()
     sd_conf = ocr_data["conf"].std()
 
+    worst_q = ocr_data["conf"].quantile(0.2)
     # leaven in the top 10% most-confident
-    best_q = ocr_data["conf"].quantile(0.9)
+    best_q = ocr_data["conf"].quantile(0.8)
 
     print("mean confidence: {:.02f} {:.02f}".format(mean_conf, sd_conf))
 
+    t = jinja2.Template(
+        open(pathlib.Path(__file__).parent / "training_template.html").read()
+    )
+
+    open(filename.with_suffix(".html"), "w").write(
+        t.render(
+            ocr_data=ocr_data[~ocr_data["conf"].between(worst_q, best_q)],
+            column_image=filename.name,
+            prefix=prefix,
+        )
+    )
+
     for index, row in ocr_data.iterrows():
 
-        if (row.conf > best_q) or (
-            (row.conf < (mean_conf - sd_conf)) or not row.text.isnumeric()
-        ):
+        if (row.conf > best_q) or (row.conf < worst_q):
             # output a cropped image
             output_fn = "{}-{:05}.png".format(prefix, index)
             box = base_img.crop((row.left, row.top, row.right, row.bot))
             box.save(output_fn)
-            open("{}-{:05n}.gt.txt".format(prefix, index), "w").write(row.text)
+            # open("{}-{:05n}.gt.txt".format(prefix, index), "w").write(row.text)
 
 
 if __name__ == "__main__":
-    # split target page into columnar json segementation files
+    # make html?
     make_training_data()

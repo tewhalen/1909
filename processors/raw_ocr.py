@@ -32,10 +32,8 @@ def prepare_ocr_data(filename: str) -> pd.DataFrame:
     ocr_data = pytesseract.image_to_data(
         Image.open(filename),
         output_type=pytesseract.Output.DATAFRAME,
-        config="--tessdata-dir {} -l 1909 --psm 6".format(
-            TESSDATADIR
-        ),  # Assume a single uniform block of text.
-    ).dropna()
+        config="--psm 6"# Assume a single uniform block of text.
+        ).dropna()
 
     # we assume the mode is the basic row, and throw out everything that's
     # three times the height of that

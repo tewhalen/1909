@@ -61,6 +61,7 @@ def split_page(filename):
         clips = get_columns(column_limits, im.size)
     except RuntimeError:
         logger.critical("{}: can't split into columns", filename)
+        raise
         sys.exit(1)
     # sys.stderr.write("%s: %d columns detected\n" % (filename, len(vlines)))
 
