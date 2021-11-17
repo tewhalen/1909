@@ -1,31 +1,45 @@
 #!/usr/bin/env python
-from flask import Flask, Response, request
+import os
+
+from flask import Flask, Response, request, send_from_directory
 
 api = Flask(__name__)
 
 
+"""This is quick and VERY VERY DIRTY"""
+
+
 @api.route("/")
 def get_index():
-    return open("column-1.html").read()
+    # serve up html files
+    # NEVER DO THIS
+    return send_from_directory(os.getcwd(), "column-1.html")
 
 
 @api.route("/<imagename>.png")
 def get_image(imagename):
-    return Response(open(imagename + ".png", "rb").read(), 200, mimetype="image/png")
+    # serve up images
+    # DONT DO IT THIS WAY
+
+    return send_from_directory(os.getcwd(), imagename + ".png")
 
 
 @api.route("/<javascript>.js")
 def get_js(javascript):
-    return Response(
-        open(javascript + ".js", "rb").read(), 200, mimetype="text/javascript"
-    )
+    # serve up javascript
+    # THIS IS VERY BAD
+    return send_from_directory(os.getcwd(), javascript + ".js")
 
 
-@api.route("/p<page>-c<col>-<row>", methods=["POST"])
+@api.route("/p<int:page>-c<int:col>-<int:row>", methods=["POST"])
 def post_new_text(page, col, row):
-    fn = "p{}-c{}-{}.gt.txt".format(page, col, row)
+    # take in UNCHECKED data and AT EXTREME RISK, write it to a LOCAL file
+    # NEVER DO THIS
+    fn = "p{:03}-c{:02}-{:05}.gt.txt".format(page, col, row)
     text = request.form["text"].strip()
     print(fn, repr(text))
+
+    # ONLY A FOOL WOULD DO THE FOLLOWING
     open(fn, "w").write(text + "\n")
 
     return {}
