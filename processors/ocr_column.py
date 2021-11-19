@@ -283,6 +283,34 @@ class Street:
             )
 
 
+def remove_weird_rows(ocr_data):
+    # we assume the mode is the basic row, and throw out everything that's
+    # three times the height of that
+    height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
+
+    ocr_data = ocr_data[ocr_data["height"] <= height_mode * 3]
+
+    # and lets throw out anything that's less than 75% the height of the regular row
+    ocr_data = ocr_data[ocr_data["height"] > height_mode * 0.75]
+
+    # filter out common OCR errors
+    FILTER_OUT = ["|"]
+
+    ocr_data = ocr_data[~ocr_data["text"].isin(FILTER_OUT)]
+
+    def filter_horiz_lines(text: str):
+        "returns true if this is not just horizontal line stuff"
+
+        horiz_chars = "".maketrans("", "", "—._-~=")
+
+        return any(text.translate(horiz_chars).strip())
+
+    # filter out horiz lines
+    ocr_data = ocr_data[ocr_data["text"].apply(filter_horiz_lines)]
+
+    return ocr_data
+
+
 def null_out_mono_errors(df, column_name):
     "set df[column_name] to NaN when the value isn't monotonically increasing" ""
     for i, row in df.iterrows():
@@ -368,6 +396,8 @@ def ocr_column(filename: pathlib.Path, output, errors, log_level):
     # read in the raw ocr data
     ocr_data = pd.read_csv(filename)
 
+    ocr_data = remove_weird_rows(ocr_data)
+
     force = filename.with_name("force-ocr").exists()
     street_info = handle_data(ocr_data, page_id, prev_street_name, errors, force)
 
@@ -409,7 +439,23 @@ def handle_data(
 
     # unfortunately, sometimes there's more than one "paragraph" in the way
     # the OCR segments the column, so we need to calcuate a unique line number
-    ocr_data["line_num"] = ocr_data["line_num"] + ((ocr_data["par_num"] - 1) * 1000)
+    prev_max = 0
+    adjusts = {}
+    for group_id, group in ocr_data.groupby(["block_num", "par_num"]):
+        new_max = group["line_num"].max()
+        adjusts[group_id] = prev_max
+        prev_max += new_max
+    for key, adj in adjusts.items():
+        block_num, par_num = key
+        ocr_data.loc[
+            (ocr_data["block_num"] == block_num) & (ocr_data["par_num"] == par_num),
+            "line_num",
+        ] = (
+            ocr_data[
+                (ocr_data["block_num"] == block_num) & (ocr_data["par_num"] == par_num)
+            ]["line_num"]
+            + adj
+        )
 
     # group it into horizontally-aligned groups
     grouped = ocr_data.groupby(["block_num", "par_num", "line_num"])

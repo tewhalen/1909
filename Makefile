@@ -10,6 +10,9 @@ MAKEFILES = $(addsuffix /Makefile,$(PAGE_DIRS))
 
 OCRFULL = $(addsuffix /page.csv,$(PAGE_DIRS))
 
+HTMLFULL = $(addsuffix /index.html,$(PAGE_DIRS))
+
+
 TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 .PRECIOUS: working/%/column-1-raw_ocr.csv working/%/column-2-raw_ocr.csv working/%/column-3-raw_ocr.csv working/%/column-4-raw_ocr.csv working/%/column-5-raw_ocr.csv working/%/page.png working/%/column-1.png
@@ -21,9 +24,11 @@ TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 all: $(OCRFULL)
 
+deriv_clean:
+	rm -f working/*/column*-ocr.csv working/*/page.csv
 
-ocr_clean:
-	rm -f working/*/column*ocr*.csv working/*/page.csv
+ocr_clean: deriv_clean
+	rm -f working/*/column*ocr*.csv
 
 img_clean:
 	rm -f working/*/column*.png working/*/page-crop.png
@@ -94,4 +99,7 @@ remake_pages:	$(addsuffix /page.png,$(PAGE_DIRS))
 
 report:
 	python processors/report.py
+
+html: ${HTMLFULL}
+
 #.PHONY: spanners

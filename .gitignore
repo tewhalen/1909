@@ -5,3 +5,4 @@ working/*/*.csv
 Pipfile.lock
 working/page-subset.pdf
 working/*/page-crop.png
+working/*/force-ocr

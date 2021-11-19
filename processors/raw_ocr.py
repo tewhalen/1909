@@ -12,17 +12,8 @@ from PIL import Image, ImageDraw
 
 logger.remove()
 
-FILTER_OUT = ["|"]
 
 TESSDATADIR = pathlib.Path(__file__).parent.parent
-
-
-def filter_horiz_lines(text: str):
-    "returns true if this is not just horizontal line stuff"
-
-    horiz_chars = "".maketrans("", "", "—._-~=")
-
-    return any(text.translate(horiz_chars).strip())
 
 
 def prepare_ocr_data(filename: str) -> pd.DataFrame:
@@ -36,21 +27,6 @@ def prepare_ocr_data(filename: str) -> pd.DataFrame:
             TESSDATADIR
         ),  # Assume a single uniform block of text.
     ).dropna()
-
-    # we assume the mode is the basic row, and throw out everything that's
-    # three times the height of that
-    height_mode = ocr_data["height"].mode()[0]  # mode is a series, just use the top
-
-    ocr_data = ocr_data[ocr_data["height"] <= height_mode * 3]
-
-    # and lets throw out anything that's less than 75% the height of the regular row
-    ocr_data = ocr_data[ocr_data["height"] > height_mode * 0.75]
-
-    # filter out common OCR errors
-    ocr_data = ocr_data[~ocr_data["text"].isin(FILTER_OUT)]
-
-    # filter out horiz lines
-    ocr_data = ocr_data[ocr_data["text"].apply(filter_horiz_lines)]
 
     ocr_data["right"] = ocr_data["left"] + ocr_data["width"]
     ocr_data["bot"] = ocr_data["top"] + ocr_data["height"]
@@ -98,12 +74,25 @@ def ocr_column(filename, output, debug_image=None):
     if debug_image:
         # output a marked-up debug image
         base_img = Image.open(filename)
-        draw = ImageDraw.Draw(base_img)
+        base_img.convert("RGB")
+        new_img = Image.new("RGB", base_img.size)
+        new_img.paste(base_img)
+        draw = ImageDraw.Draw(new_img)
         for index, row in ocr_data.iterrows():
-            draw.rectangle((row.right, row.bot, row.left, row.top))
-            draw.text((row.left, row.bot), row.text, color="red")
+            color = "blue"
+            if row.conf > 90:
+                color = "green"
+            elif row.conf < 85:
+                color = "red"
+
+            draw.rectangle((row.right, row.bot, row.left, row.top), outline=color)
+            x = "{} ({:0.0f}%)".format(row.text, row.conf)
+            # print("drawing {}".format(x))
+            draw.text((row.left, row.bot), x, fill=color)
+            # color="red")
+
             # print(index, row['right'],row['left'],row.conf)
-        base_img.save(debug_image)
+        new_img.save(debug_image, icc_profile=None)
 
 
 if __name__ == "__main__":

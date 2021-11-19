@@ -6,6 +6,8 @@ import click
 import jinja2
 import pandas
 
+TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
+
 
 class Column:
     def __init__(self, col_id: int, data_table: pandas.DataFrame):
@@ -20,9 +22,7 @@ class Column:
         )
 
     def render(self):
-        t = jinja2.Template(
-            open(pathlib.Path(__file__).parent / "correction_template.html").read()
-        )
+        t = jinja2.Template(open(TEMPLATES_DIR / "correction_template.html").read())
 
         return t.render(
             streets=self.data_table.groupby("street"), column_image=self.image
@@ -59,9 +59,7 @@ class Page:
 
     def render(self):
 
-        t = jinja2.Template(
-            open(pathlib.Path(__file__).parent / "page_index_template.html").read()
-        )
+        t = jinja2.Template(open(TEMPLATES_DIR / "page_index_template.html").read())
 
         return t.render(page=self)
 
