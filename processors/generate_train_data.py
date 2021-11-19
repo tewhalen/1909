@@ -1,17 +1,12 @@
 #!/usr/bin/env python
 
-import csv
-import json
-import os
-import sys
-import typing
+
+import re
 
 import click
-import matplotlib.pyplot as plt
 import pandas as pd
 import pytesseract
-from numpy import nan
-from PIL import Image, ImageDraw
+from PIL import Image
 import jinja2
 import pathlib
 
@@ -71,14 +66,18 @@ def make_training_data(filename: pathlib.Path, prefix):
 
     This is meant to be hand-corrected and used to train the LSTM model"""
 
-    ocr_data = prepare_ocr_data(filename)
+    column_id = int(re.match(r"column-([0-9]+)", filename.name).group(1))
+
+    ocr_data = pd.read_csv(
+        pathlib.Path(filename.with_name("column-{}-raw_ocr.csv".format(column_id)))
+    )
     base_img = Image.open(filename)
 
     mean_conf = ocr_data["conf"].mean()
     sd_conf = ocr_data["conf"].std()
 
     worst_q = ocr_data["conf"].quantile(0.2)
-    # leaven in the top 10% most-confident
+    # leaven in the top 20% most-confident
     best_q = ocr_data["conf"].quantile(0.8)
 
     print("mean confidence: {:.02f} {:.02f}".format(mean_conf, sd_conf))

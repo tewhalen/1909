@@ -45,7 +45,7 @@
 </head>
 
 <body>
-    <script src="jquery-3.6.0.min.js"></script>
+    <script src="/jquery-3.6.0.min.js"></script>
     <script>
         $(document).ready(function () {
             $("td.notice").hover(function () {
@@ -60,22 +60,26 @@
             },
 
                 function () {
-                    $("#visualizer").css("visibility", "hidden");
+
 
                 });
+
+            $("td.editable").blur(function () {
+                $.post("/" + this.id, { text: $(this).text() })
+            });
         });
     </script>
     <div class="container">
         <div class="row align-items-start">
             <div class="col">
-                <img id="column_img" src="{{column_image}}" width="300px" />
+                <img id="column_img" src="/{{column_image}}" width="300px" />
                 <div id="visualizer"></div>
             </div>
             <div class="col">
                 <table class="address table table-bordered table-sm">
                     {% for index, row in ocr_data.iterrows() %}
                     <tr>
-                        <td><img src="{{prefix}}-{{'{:05}'.format(index)}}.png"></td>
+                        <td><img src="/{{prefix}}-{{'{:05}'.format(index)}}.png" height="30px"></td>
                         <td class="editable notice" data-left="{{row.left}}" data-top="{{row.top}}"
                             data-height="{{row.height}}" data-width="{{row.width}}" contenteditable="true"
                             id="{{prefix}}-{{'{:05}'.format(index)}}">
