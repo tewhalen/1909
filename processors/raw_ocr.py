@@ -10,10 +10,10 @@ import pytesseract
 from loguru import logger
 from PIL import Image, ImageDraw
 
-logger.remove()
 
-
-TESSDATADIR = pathlib.Path(__file__).parent.parent
+sys.path.append(str(pathlib.Path(__file__).parent.parent))
+# print(sys.path)
+import config
 
 
 def prepare_ocr_data(filename: str) -> pd.DataFrame:
@@ -23,8 +23,8 @@ def prepare_ocr_data(filename: str) -> pd.DataFrame:
     ocr_data = pytesseract.image_to_data(
         Image.open(filename),
         output_type=pytesseract.Output.DATAFRAME,
-        config="--tessdata-dir {} -l 1909 --psm 6".format(
-            TESSDATADIR
+        config="--tessdata-dir {} -l {} --psm {}".format(
+            config.OCR.TESSDATADIR, config.OCR.MODEL, config.OCR.PSM
         ),  # Assume a single uniform block of text.
     ).dropna()
 
@@ -96,5 +96,8 @@ def ocr_column(filename, output, debug_image=None):
 
 
 if __name__ == "__main__":
+
     # split target page into columnar json segementation files
+    logger.remove()
+
     ocr_column()

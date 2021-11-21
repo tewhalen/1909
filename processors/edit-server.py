@@ -1,17 +1,19 @@
 #!/usr/bin/env python
-import os, pathlib
-from numpy.lib.npyio import load
+import os
+import pathlib
+import sys
+
 import pandas as pd
+from flask import Flask, request, send_from_directory, render_template
 
-from flask import Flask, Response, request, send_from_directory
-import jinja2
+sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
-api = Flask(__name__)
+import config
+
+api = Flask(__name__, template_folder=config.TEMPLATES_DIR)
 
 
 """This is quick and VERY VERY DIRTY"""
-
-TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 
 
 def load_ground_texts(path: pathlib.Path, page: int, column: int):
@@ -34,9 +36,7 @@ def get_index():
 @api.route("/column<int:col>/")
 def show_column(col):
 
-    page = 1
-
-    t = jinja2.Template(open(TEMPLATES_DIR / "templates/training_template.html").read())
+    page = int(pathlib.Path(os.getcwd()).name)
 
     # read in the raw ocr data
     ocr_data = pd.read_csv(
@@ -54,10 +54,11 @@ def show_column(col):
 
     filename = "column-{}.png".format(col)
 
-    return t.render(
+    return render_template(
+        "training_template.html",
         ocr_data=ocr_data[~ocr_data["conf"].between(worst_q, best_q)],
         column_image=filename,
-        prefix="p{:03}-c{:02}".format(page, col),
+        prefix="p{:03}-c{:01}".format(page, col),
     )
 
 
@@ -73,7 +74,7 @@ def get_image(imagename):
 def get_js(javascript):
     # serve up javascript
     # THIS IS VERY BAD
-    return send_from_directory(os.getcwd(), javascript + ".js")
+    return send_from_directory(config.BASE_DIR, javascript + ".js")
 
 
 @api.route("/p<int:page>-c<int:col>-<int:row>", methods=["POST"])
@@ -81,11 +82,17 @@ def post_new_text(page, col, row):
     # take in UNCHECKED data and AT EXTREME RISK, write it to a LOCAL file
     # NEVER DO THIS
     fn = "p{:03}-c{:02}-{:05}.gt.txt".format(page, col, row)
+    gt_file = pathlib.Path(fn)
     text = request.form["text"].strip()
     # print(fn, repr(text))
 
     # ONLY A FOOL WOULD DO THE FOLLOWING
-    open(fn, "w").write(text + "\n")
+    if not text:
+        # delete the gt
+        if gt_file.exists():
+            gt_file.unlink()
+    else:
+        open(gt_file, "w").write(text + "\n")
 
     return {}
 

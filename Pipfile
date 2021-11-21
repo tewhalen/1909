@@ -18,6 +18,7 @@ pandas = "*"
 csvkit = "*"
 jinja2 = "*"
 loguru = "*"
+flask = "*"
 
 [dev-packages]
 black = "*"

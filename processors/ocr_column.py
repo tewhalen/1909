@@ -13,7 +13,8 @@ import pandas as pd
 from loguru import logger
 from numpy import nan
 
-logger.remove()
+sys.path.append(str(pathlib.Path(__file__).parent.parent))
+import config
 
 
 def probable_street_name(text: str):
@@ -519,5 +520,7 @@ def handle_data(
 
 
 if __name__ == "__main__":
+    logger.remove()
+
     # split target page into columnar json segementation files
     ocr_column()
