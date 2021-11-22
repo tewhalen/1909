@@ -1,8 +1,8 @@
 # a makefile
 
-LAST_PAGE = 171
+LAST_PAGE = 1820
 
-PAGES = $(shell seq -f %03g 0 $(LAST_PAGE))
+PAGES = $(shell seq -f %04g 0 $(LAST_PAGE))
 
 PAGE_DIRS = $(addprefix working/,$(PAGES))
 
@@ -35,12 +35,10 @@ clean: ocr_clean img_clean
 		done
 		rm working/page-subset.pdf
 
- 
-working/%/page.png: source/1910i.pdf 
-	@mkdir -p $(@D)
-	convert +dither -colors 2 -colorspace gray -normalize -density 600x600 $<[$*] working/$*/page.png
+working/%/page-convert.png: working/%/page.png
+	convert +dither -colors 2 -colorspace gray -normalize -density 600x600 $< $@
 
-working/%/page-crop.png: working/%/page.png
+working/%/page-crop.png: working/%/page-convert.png
 	processors/auto_crop_page.py $< $@
 
 working/%/column-1.png working/%/column-2.png working/%/column-3.png working/%/column-4.png working/%/column-5.png: working/%/page-crop.png

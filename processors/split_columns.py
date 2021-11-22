@@ -5,7 +5,9 @@ import sys
 import click
 from loguru import logger
 from PIL import Image
-from shapely.geometry import Polygon
+import cv2
+import numpy as np
+import pandas as pd
 
 from image_utils import deskew
 from street_correct import find_five_columns
@@ -18,8 +20,10 @@ def save_column(im, i, column, savepath):
     """Save this column"""
 
     ftif = "column-%d.png" % (i + 1)
+    h, w = im.size
+    x1, x2 = column
 
-    trimmed = im.crop(column.bounds)
+    trimmed = im.crop((x1, 0, x2, w))
     # horizontal deskew
     trimmed = deskew(trimmed, axis=0)
     # trimmed = silly_crop(trimmed)
@@ -27,15 +31,47 @@ def save_column(im, i, column, savepath):
     return trimmed
 
 
-def get_columns(bar_limits, im_size):
-    width, height = im_size
+def find_lines_in_image(filename):
+    orig_img = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+    (h, w, _) = orig_img.shape
 
-    cols = []
-    for right, left in bar_limits:
+    SIZE = 600
 
-        p = Polygon([(right, 0), (left, 0), (left, height), (right, height)])
-        cols.append(p)
-    return cols
+    scale = float(SIZE) / w
+
+    n_h, n_w = int(h * scale), int(w * scale)
+    img = cv2.resize(orig_img, (n_w, n_h))
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 75, 150)
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=int(80),
+        minLineLength=200,
+        maxLineGap=2,
+    )
+    lines = pd.DataFrame(lines[:, 0, :], columns=["x1", "y1", "x2", "y2"])
+
+    return (lines.sort_values("x1") / scale).astype(int)
+
+
+def get_columns(img, lines, columns=5):
+    # let's assume these are fully vertical
+    w, h = img.size
+    min_width = (w / columns) * 0.9  # -10%
+    prev_x = 0
+    cols = [0]
+    for line in lines.itertuples():
+        if line.x1 - prev_x > min_width:
+            cols.append(line.x1)
+            prev_x = line.x1
+    if cols[0] > min_width:
+        cols.insert(0, 0)
+    if w - cols[-1] > min_width:
+        cols.append(w)
+    logger.info("h:{}, w:{}, cols:{}", h, w, cols)
+    return list(zip(cols, cols[1:]))
 
 
 @logger.catch
@@ -44,9 +80,7 @@ def get_columns(bar_limits, im_size):
 def split_page(filename):
     """Extract columns from spreadsheet-like image file"""
 
-    logger.add(
-        sys.stderr, format="<level>{message}</level>", backtrace=True, level="INFO"
-    )
+    logger.add(sys.stderr, format="<level>{message}</level>", level="DEBUG")
 
     handcrop = pathlib.Path(filename).with_name("page-handcrop.png")
     if handcrop.exists():
@@ -55,22 +89,22 @@ def split_page(filename):
         )
         filename = handcrop
 
-    im = Image.open(filename)
-    try:
-        column_limits = find_five_columns(im)
-        clips = get_columns(column_limits, im.size)
-    except RuntimeError:
-        logger.critical("{}: can't split into columns", filename)
-        raise
-        sys.exit(1)
+    # orig_img = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+
+    lines = find_lines_in_image(str(filename))
+
+    image = Image.open(filename)
+    cols = get_columns(image, lines, columns=5)
+    logger.info(cols)
+
     # sys.stderr.write("%s: %d columns detected\n" % (filename, len(vlines)))
 
     # clips = get_columns(vlines, top_bar, im.size)
     # sys.stderr.write("%s: cols: %d\n" % (filename, len(clips)))
 
     savepath = pathlib.Path(filename).parent
-    for i, col in enumerate(clips):
-        save_column(im, i, col, savepath)
+    for i, col in enumerate(cols):
+        save_column(image, i, col, savepath)
 
 
 if __name__ == "__main__":
